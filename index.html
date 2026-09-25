@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#06020f">
   <title>Train Conductor 2 - Las Vegas Ghost Concert</title>
   <style>
     * {
@@ -69,6 +73,21 @@
       gap: 6px;
       transition: transform 0.12s;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+
+    @media (max-height: 480px) {
+      .top-left-hud {
+        top: 6px;
+        left: 8px;
+        gap: 6px;
+      }
+      .hud-pill {
+        padding: 4px 9px;
+        font-size: 10.5px;
+        border-width: 1.5px;
+        border-radius: 14px;
+        gap: 4px;
+      }
     }
 
     .hud-pill:active {
@@ -1167,8 +1186,16 @@
           this.trackY.push(topMargin + i * spacing);
         }
 
+        this.trackSpacing = this.trackY[1] - this.trackY[0];
         this.trackLeftX = 36;
         this.trackRightX = this.width - 36;
+
+        // Update live train y-positions to match resized tracks
+        if (this.trains) {
+          for (let t of this.trains) {
+            t.y = this.trackY[t.track];
+          }
+        }
 
         // Position crowd baselines to open up the playfield
         this.crowdTopY = this.height * 0.055;
@@ -1312,6 +1339,11 @@
 
       bindEvents() {
         window.addEventListener('resize', () => this.resize());
+        document.addEventListener('fullscreenchange', () => this.resize());
+        document.addEventListener('webkitfullscreenchange', () => this.resize());
+        window.addEventListener('orientationchange', () => {
+          setTimeout(() => this.resize(), 150);
+        });
 
         const unlockAudio = () => audio.resume();
         window.addEventListener('pointerdown', unlockAudio, { once: true });
@@ -1327,14 +1359,19 @@
           const x = clientX - rect.left;
           const y = clientY - rect.top;
 
-          // Bottom-Right Fast-Forward Button [ >>> ]
-          if (x >= this.width - 95 && x <= this.width - 12 && y >= this.height - 70 && y <= this.height - 12) {
+          // Bottom-Right Fast-Forward Button [ >>> ] (Dynamically sized for compact & standard screens)
+          const isCompact = this.height < 450;
+          const btnW = isCompact ? 56 : 70;
+          const btnH = isCompact ? 34 : 44;
+          const btnX = this.width - btnW - (isCompact ? 8 : 16);
+          const btnY = this.height - btnH - (isCompact ? 8 : 18);
+          if (x >= btnX - 10 && x <= btnX + btnW + 10 && y >= btnY - 10 && y <= btnY + btnH + 10) {
             this.fastForward = !this.fastForward;
             this.speedMultiplier = this.fastForward ? 1.75 : 1.0;
             return;
           }
 
-          // Hit detection on train cars with ghosts (generous 85px hit radius)
+          // Hit detection on train cars with ghosts (generous hit radius)
           const hit = this.findCarGhostAt(x, y);
           if (hit) {
             this.dragTarget = hit;
@@ -1413,6 +1450,20 @@
           document.getElementById('start-modal').classList.remove('active');
           this.started = true;
           audio.resume();
+
+          // Fullscreen API & Orientation Locking on first user tap
+          try {
+            if (document.documentElement.requestFullscreen) {
+              document.documentElement.requestFullscreen().catch(() => {});
+            } else if (document.documentElement.webkitRequestFullscreen) {
+              document.documentElement.webkitRequestFullscreen();
+            }
+            if (screen.orientation && screen.orientation.lock) {
+              screen.orientation.lock('landscape').catch(() => {});
+            }
+          } catch (e) {}
+
+          setTimeout(() => this.resize(), 120);
         });
 
         document.getElementById('sound-badge').addEventListener('click', () => {
@@ -1473,14 +1524,14 @@
       }
 
       getCarX(train, carIndex) {
-        const carSpacing = 110;
+        const carSpacing = this.trackSpacing ? (this.trackSpacing * 1.40) : 110;
         const offset = carIndex * carSpacing;
         return train.facingRight ? (train.headX - offset) : (train.headX + offset);
       }
 
       findCarGhostAt(x, y) {
         let bestTarget = null;
-        let bestDist = 95; // Generous 95px grab radius for 2.3x scaled ghosts
+        let bestDist = this.trackSpacing ? (this.trackSpacing * 0.88) : 85;
 
         for (let train of this.trains) {
           for (let i = 0; i < train.cars.length; i++) {
@@ -1532,14 +1583,15 @@
 
       canSpawnOnTrack(track, fromLeft) {
         const centerX = this.width * 0.5;
+        const safeDist = this.trackSpacing ? (this.trackSpacing * 2.2) : 175;
         for (let t of this.trains) {
           if (t.track !== track) continue;
 
           // Same entrance direction: check that trailing car has moved far enough from entrance
           if (t.facingRight === fromLeft) {
             const lastCarX = this.getCarX(t, t.cars.length - 1);
-            if (fromLeft && lastCarX < this.trackLeftX + 175) return false;
-            if (!fromLeft && lastCarX > this.trackRightX - 175) return false;
+            if (fromLeft && lastCarX < this.trackLeftX + safeDist) return false;
+            if (!fromLeft && lastCarX > this.trackRightX - safeDist) return false;
           } else {
             // Opposing entrance direction: must have approached center
             if (fromLeft && t.headX < centerX - 40) return false;
@@ -2402,6 +2454,10 @@
       }
 
       renderTrains(ctx) {
+        const sledW = this.trackSpacing ? (this.trackSpacing * 1.35) : 104;
+        const sledH = this.trackSpacing ? (this.trackSpacing * 0.36) : 28;
+        const ghostScale = Math.min(2.1, (this.trackSpacing * 0.58) / 32);
+
         this.trains.forEach(train => {
           ctx.save();
 
@@ -2415,27 +2471,26 @@
             // Coupler chain to next car (if alive)
             if (i < train.cars.length - 1 && !train.cars[i + 1].enteredTrap) {
               const nextCarX = this.getCarX(train, i + 1);
+              const couplerY = carY + sledH * 0.35;
               ctx.strokeStyle = '#1e112d';
-              ctx.lineWidth = 6;
+              ctx.lineWidth = Math.max(3, sledH * 0.20);
               ctx.beginPath();
-              ctx.moveTo(carX, carY + 8);
-              ctx.lineTo(nextCarX, carY + 8);
+              ctx.moveTo(carX, couplerY);
+              ctx.lineTo(nextCarX, couplerY);
               ctx.stroke();
 
               ctx.strokeStyle = '#c084fc';
-              ctx.lineWidth = 2.5;
+              ctx.lineWidth = Math.max(1.5, sledH * 0.08);
               ctx.beginPath();
-              ctx.moveTo(carX, carY + 8);
-              ctx.lineTo(nextCarX, carY + 8);
+              ctx.moveTo(carX, couplerY);
+              ctx.lineTo(nextCarX, couplerY);
               ctx.stroke();
             }
 
             ctx.save();
             ctx.translate(carX, carY);
 
-            // Olive drab green minecart sled (104px x 28px for heavy industrial presence)
-            const sledW = 104;
-            const sledH = 28;
+            // Olive drab green minecart sled (scaled proportionally to trackSpacing)
             ctx.fillStyle = '#455734';
             ctx.strokeStyle = '#232d1a';
             ctx.lineWidth = 2.5;
@@ -2446,38 +2501,40 @@
             ctx.strokeStyle = '#6f8a54';
             ctx.lineWidth = 1.8;
             ctx.beginPath();
-            ctx.moveTo(-sledW * 0.5 + 2, 3);
-            ctx.lineTo(sledW * 0.5 - 2, 3);
+            ctx.moveTo(-sledW * 0.5 + 2, Math.max(2, sledH * 0.1));
+            ctx.lineTo(sledW * 0.5 - 2, Math.max(2, sledH * 0.1));
             ctx.stroke();
 
             // Wheel stud rivets
             ctx.fillStyle = '#8ea873';
-            [-38, -19, 19, 38].forEach(rx => {
+            [-sledW * 0.36, -sledW * 0.18, sledW * 0.18, sledW * 0.36].forEach(rx => {
               ctx.beginPath();
-              ctx.arc(rx, 14, 3, 0, Math.PI * 2);
+              ctx.arc(rx, sledH * 0.5, Math.max(2, sledH * 0.11), 0, Math.PI * 2);
               ctx.fill();
             });
 
             // Wheel brackets
             ctx.fillStyle = '#1e293b';
-            ctx.fillRect(-36, sledH - 1, 10, 5);
-            ctx.fillRect(26, sledH - 1, 10, 5);
+            const bracketW = sledW * 0.10;
+            const bracketH = Math.max(3, sledH * 0.18);
+            ctx.fillRect(-sledW * 0.35, sledH - 1, bracketW, bracketH);
+            ctx.fillRect(sledW * 0.25, sledH - 1, bracketW, bracketH);
 
             // Warning aura when nearing the trap
             const distToCenter = Math.abs(carX - this.width * 0.5);
-            if (car.hasGhost && distToCenter < 140) {
+            if (car.hasGhost && distToCenter < (this.trackSpacing * 1.5)) {
               const pulse = (Math.sin(performance.now() * 0.015) + 1) * 0.5;
               ctx.strokeStyle = `rgba(255, 0, 85, ${0.4 + pulse * 0.5})`;
               ctx.lineWidth = 3.5;
-              ctx.strokeRect(-sledW * 0.5 - 4, -58, sledW + 8, sledH + 62);
+              ctx.strokeRect(-sledW * 0.5 - 4, -sledH * 2.2, sledW + 8, sledH * 3.2 + 4);
             }
 
-            // Ghost (Turned in direction of motion, scaled 2.3x larger!)
+            // Ghost (Turned in direction of motion, scaled dynamically based on track spacing!)
             if (car.hasGhost) {
-              const bobY = Math.sin(train.bobTimer + i * 1.3) * 2.4;
+              const bobY = Math.sin(train.bobTimer + i * 1.3) * (this.trackSpacing * 0.032);
               ctx.save();
-              ctx.translate(0, -10);
-              ctx.scale(2.3, 2.3); // 2.3x Scale: Plump, prominent and vibrant!
+              ctx.translate(0, -sledH * 0.36);
+              ctx.scale(ghostScale, ghostScale);
               this.drawGhost(ctx, car.ghostType, bobY, train.facingRight, true);
               ctx.restore();
             }
@@ -2596,13 +2653,14 @@
       }
 
       renderFlyingGhosts(ctx) {
+        const ghostScale = Math.min(2.1, (this.trackSpacing * 0.58) / 32);
         ctx.save();
         this.flyingGhosts.forEach(fg => {
           ctx.save();
           ctx.globalAlpha = Math.max(0, fg.alpha);
           ctx.translate(fg.x, fg.y);
           ctx.rotate(fg.rot);
-          ctx.scale(2.3, 2.3); // 2.3x Scale to match the cart ghost!
+          ctx.scale(ghostScale, ghostScale);
 
           this.drawGhost(ctx, fg.type, 0, fg.flickedUp, false);
 
@@ -2745,64 +2803,66 @@
       renderStageProps(ctx) {
         const cx = this.width * 0.5;
 
-        // DJ Conductor Booth (Top Center)
-        ctx.save();
-        const boothY = this.height * 0.08;
+        // DJ Conductor Booth (Top Center) - only render on larger viewports to avoid overlapping hearts and Track 1 on compact screens
+        if (this.height >= 480) {
+          ctx.save();
+          const boothY = this.height * 0.08;
 
-        // DJ Desk with neon edging
-        ctx.fillStyle = '#1e102d';
-        ctx.strokeStyle = '#a855f7';
-        ctx.lineWidth = 2.5;
-        ctx.fillRect(cx - 38, boothY - 14, 76, 28);
-        ctx.strokeRect(cx - 38, boothY - 14, 76, 28);
+          // DJ Desk with neon edging
+          ctx.fillStyle = '#1e102d';
+          ctx.strokeStyle = '#a855f7';
+          ctx.lineWidth = 2.5;
+          ctx.fillRect(cx - 38, boothY - 14, 76, 28);
+          ctx.strokeRect(cx - 38, boothY - 14, 76, 28);
 
-        // Crossed-out ghost warning sign on DJ desk
-        ctx.strokeStyle = '#ff0055';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(cx, boothY, 8.5, 0, Math.PI * 2);
-        ctx.moveTo(cx - 6, boothY - 6);
-        ctx.lineTo(cx + 6, boothY + 6);
-        ctx.stroke();
+          // Crossed-out ghost warning sign on DJ desk
+          ctx.strokeStyle = '#ff0055';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(cx, boothY, 8.5, 0, Math.PI * 2);
+          ctx.moveTo(cx - 6, boothY - 6);
+          ctx.lineTo(cx + 6, boothY + 6);
+          ctx.stroke();
 
-        // Conductor DJ Character (Vampire in Conductor Hat)
-        // Cape
-        ctx.fillStyle = '#6b21a8';
-        ctx.beginPath();
-        ctx.moveTo(cx - 15, boothY - 14);
-        ctx.lineTo(cx - 18, boothY - 30);
-        ctx.lineTo(cx + 18, boothY - 30);
-        ctx.lineTo(cx + 15, boothY - 14);
-        ctx.closePath();
-        ctx.fill();
+          // Conductor DJ Character (Vampire in Conductor Hat)
+          // Cape
+          ctx.fillStyle = '#6b21a8';
+          ctx.beginPath();
+          ctx.moveTo(cx - 15, boothY - 14);
+          ctx.lineTo(cx - 18, boothY - 30);
+          ctx.lineTo(cx + 18, boothY - 30);
+          ctx.lineTo(cx + 15, boothY - 14);
+          ctx.closePath();
+          ctx.fill();
 
-        // Head
-        ctx.fillStyle = '#f8fafc';
-        ctx.beginPath();
-        ctx.arc(cx, boothY - 24, 9.5, 0, Math.PI * 2);
-        ctx.fill();
+          // Head
+          ctx.fillStyle = '#f8fafc';
+          ctx.beginPath();
+          ctx.arc(cx, boothY - 24, 9.5, 0, Math.PI * 2);
+          ctx.fill();
 
-        // Conductor Hat
-        ctx.fillStyle = '#0f051d';
-        ctx.fillRect(cx - 11, boothY - 36, 22, 5.5);
-        ctx.fillRect(cx - 8, boothY - 44, 16, 9);
-        ctx.fillStyle = '#ffd166';
-        ctx.fillRect(cx - 3, boothY - 35, 6, 4); // Gold badge
+          // Conductor Hat
+          ctx.fillStyle = '#0f051d';
+          ctx.fillRect(cx - 11, boothY - 36, 22, 5.5);
+          ctx.fillRect(cx - 8, boothY - 44, 16, 9);
+          ctx.fillStyle = '#ffd166';
+          ctx.fillRect(cx - 3, boothY - 35, 6, 4); // Gold badge
 
-        // Green & Red track control levers
-        ctx.fillStyle = '#39ff14';
-        ctx.beginPath();
-        ctx.arc(cx - 25, boothY - 18, 4.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#ff0055';
-        ctx.beginPath();
-        ctx.arc(cx + 25, boothY - 18, 4.5, 0, Math.PI * 2);
-        ctx.fill();
+          // Green & Red track control levers
+          ctx.fillStyle = '#39ff14';
+          ctx.beginPath();
+          ctx.arc(cx - 25, boothY - 18, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ff0055';
+          ctx.beginPath();
+          ctx.arc(cx + 25, boothY - 18, 4.5, 0, Math.PI * 2);
+          ctx.fill();
 
-        ctx.restore();
+          ctx.restore();
+        }
 
         // "Welcome to Fabulous LAS VEGAS" Neon Diamond Sign (Top Left, nicely clear of top-left controls)
-        if (this.width >= 720) {
+        if (this.width >= 820 && this.height >= 460) {
           ctx.save();
           const signX = Math.max(340, this.width * 0.24);
           const signY = 56;
@@ -2877,14 +2937,16 @@
       renderHUD(ctx) {
         ctx.save();
 
+        const isCompact = this.height < 450;
+
         // Vintage Carnival / Marquee SCORE Board (Top Right)
-        const scoreBoxW = 215;
-        const scoreBoxH = 52;
-        const scoreX = this.width - 20;
-        const scoreY = 14;
+        const scoreBoxW = isCompact ? 155 : 215;
+        const scoreBoxH = isCompact ? 38 : 52;
+        const scoreX = this.width - (isCompact ? 10 : 20);
+        const scoreY = isCompact ? 6 : 14;
         const left = scoreX - scoreBoxW;
         const top = scoreY;
-        const notch = 10;
+        const notch = isCompact ? 7 : 10;
 
         // Notched diamond-corner carnival plaque path
         ctx.beginPath();
@@ -2907,7 +2969,7 @@
 
         // Double ornate bronze/gold border
         ctx.strokeStyle = '#d4af37';
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = isCompact ? 1.8 : 2.5;
         ctx.stroke();
 
         ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)';
@@ -2917,74 +2979,83 @@
         // Gold corner rivets
         ctx.fillStyle = '#ffd166';
         [
-          { x: left + notch + 3, y: top + notch + 3 },
-          { x: scoreX - notch - 3, y: top + notch + 3 },
-          { x: left + notch + 3, y: top + scoreBoxH - notch - 3 },
-          { x: scoreX - notch - 3, y: top + scoreBoxH - notch - 3 }
+          { x: left + notch + 2, y: top + notch + 2 },
+          { x: scoreX - notch - 2, y: top + notch + 2 },
+          { x: left + notch + 2, y: top + scoreBoxH - notch - 2 },
+          { x: scoreX - notch - 2, y: top + scoreBoxH - notch - 2 }
         ].forEach(pt => {
           ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 2.2, 0, Math.PI * 2);
+          ctx.arc(pt.x, pt.y, isCompact ? 1.6 : 2.2, 0, Math.PI * 2);
           ctx.fill();
         });
 
         // Stylized Neon Green / Mint "SCORE" Header
-        ctx.font = '900 17px sans-serif';
+        ctx.font = isCompact ? '900 12.5px sans-serif' : '900 17px sans-serif';
         ctx.fillStyle = '#00ff88';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText("SCORE", left + 18, top + scoreBoxH * 0.5);
+        ctx.fillText("SCORE", left + (isCompact ? 12 : 18), top + scoreBoxH * 0.5);
 
         // Massive Neon Green Digits with Pulse Animation
         ctx.save();
-        const numCenterX = scoreX - 18;
+        const numCenterX = scoreX - (isCompact ? 12 : 18);
         const numCenterY = top + scoreBoxH * 0.5;
         ctx.translate(numCenterX, numCenterY);
         ctx.scale(this.scorePulse, this.scorePulse);
 
-        ctx.font = '900 32px Courier New, monospace';
+        ctx.font = isCompact ? '900 23px Courier New, monospace' : '900 32px Courier New, monospace';
         ctx.fillStyle = '#39ff14';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         ctx.shadowColor = '#39ff14';
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = isCompact ? 5 : 8;
         ctx.fillText(this.score.toString(), 0, 0);
         ctx.restore();
 
         // Strikes / Hearts Indicator (Top Center)
-        const heartStartX = this.width * 0.5 - 42;
-        const pillW = 108;
-        const pillH = 34;
+        const pillW = isCompact ? 84 : 108;
+        const pillH = isCompact ? 26 : 34;
+        const pillY = isCompact ? 6 : 14;
+        const heartStartX = this.width * 0.5 - pillW * 0.5;
+
         ctx.fillStyle = 'rgba(15, 5, 28, 0.88)';
         ctx.strokeStyle = '#a855f7';
-        ctx.lineWidth = 1.8;
+        ctx.lineWidth = isCompact ? 1.4 : 1.8;
         ctx.beginPath();
-        ctx.roundRect(heartStartX - 12, 14, pillW, pillH, 8);
+        ctx.roundRect(heartStartX, pillY, pillW, pillH, isCompact ? 6 : 8);
         ctx.fill();
         ctx.stroke();
 
+        const heartSpacing = isCompact ? 22 : 28;
+        const heartOffset = isCompact ? 20 : 26;
         for (let s = 0; s < 3; s++) {
           const isLost = s < this.strikes;
-          ctx.font = '19px sans-serif';
+          ctx.font = isCompact ? '14px sans-serif' : '19px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.shadowBlur = isLost ? 0 : 6;
           ctx.shadowColor = '#ff0055';
-          ctx.fillText(isLost ? "🖤" : "❤️", heartStartX + s * 28 + 10, 31);
+          ctx.fillText(isLost ? "🖤" : "❤️", heartStartX + heartOffset + s * heartSpacing, pillY + pillH * 0.5);
         }
         ctx.shadowBlur = 0;
 
         // Bottom Right: Fast Forward Button [ >>> ]
+        const btnW = isCompact ? 56 : 70;
+        const btnH = isCompact ? 34 : 44;
+        const btnX = this.width - btnW - (isCompact ? 8 : 16);
+        const btnY = this.height - btnH - (isCompact ? 8 : 18);
+
         ctx.fillStyle = this.fastForward ? 'rgba(57, 255, 20, 0.25)' : 'rgba(24, 8, 44, 0.88)';
         ctx.strokeStyle = this.fastForward ? '#39ff14' : '#a855f7';
         ctx.lineWidth = 2;
-        ctx.fillRect(this.width - 86, this.height - 62, 70, 44);
-        ctx.strokeRect(this.width - 86, this.height - 62, 70, 44);
+        ctx.fillRect(btnX, btnY, btnW, btnH);
+        ctx.strokeRect(btnX, btnY, btnW, btnH);
 
         ctx.fillStyle = this.fastForward ? '#39ff14' : '#f1edfa';
-        ctx.font = 'bold 17px sans-serif';
+        ctx.font = isCompact ? 'bold 13px sans-serif' : 'bold 17px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText("▶▶▶", this.width - 51, this.height - 40);
+        ctx.fillText("▶▶▶", btnX + btnW * 0.5, btnY + btnH * 0.5);
 
         ctx.restore();
       }
