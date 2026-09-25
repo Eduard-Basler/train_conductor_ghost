@@ -427,7 +427,6 @@
             <span class="stat-num" id="final-cyan">0</span>
           </div>
         </div>
-        <button id="btn-wipe-score" style="background:none; border:none; color:#f43f5e; font-size:11px; cursor:pointer; text-decoration:underline; margin:4px 0 8px;">Reset High Score</button>
 
         <button id="btn-share-score" class="primary-btn btn-secondary">📤 SHARE SEED & SCORE</button>
         <button id="btn-restart" class="primary-btn">ENCORE! (RETRY THIS SEED)</button>
@@ -1074,7 +1073,7 @@
         this.started = false;
         this.gameOver = false;
         this.score = 0;
-        this.highScore = parseInt(localStorage.getItem('tc2_vegas_v2_high_' + this.currentSeedStr) || '0', 10);
+        this.highScore = parseInt(localStorage.getItem('tc2_vegas_v3_high_' + this.currentSeedStr) || '0', 10);
         this.strikes = 0;
         this.pinkSaved = 0;
         this.cyanSaved = 0;
@@ -1588,26 +1587,12 @@
           document.getElementById('gameover-modal').classList.remove('active');
           this.restart();
         });
-
-        const wipeBtn = document.getElementById('btn-wipe-score');
-        if (wipeBtn) {
-          wipeBtn.addEventListener('click', () => {
-            try {
-              localStorage.removeItem('tc2_vegas_v2_high_' + this.currentSeedStr);
-              localStorage.removeItem('tc2_vegas_high_' + this.currentSeedStr);
-            } catch (e) {}
-            this.highScore = 0;
-            const finalHigh = document.getElementById('final-high');
-            if (finalHigh) finalHigh.textContent = '0';
-            this.showToast('HIGH SCORE RESET!');
-          });
-        }
       }
 
       changeSeed(newSeed) {
         this.currentSeedStr = newSeed;
         this.rng.setSeed(newSeed);
-        this.highScore = parseInt(localStorage.getItem('tc2_vegas_v2_high_' + this.currentSeedStr) || '0', 10);
+        this.highScore = parseInt(localStorage.getItem('tc2_vegas_v3_high_' + this.currentSeedStr) || '0', 10);
         this.updateSeedUI();
         window.history.replaceState({}, '', '?seed=' + encodeURIComponent(newSeed));
         this.restart();
@@ -1615,14 +1600,14 @@
       }
 
       getCarX(train, carIndex) {
-        const carSpacing = 82;
+        const carSpacing = 56;
         const offset = carIndex * carSpacing;
         return train.facingRight ? (train.headX - offset) : (train.headX + offset);
       }
 
       findCarGhostAt(x, y) {
         let bestTarget = null;
-        let bestDist = 65;
+        let bestDist = 48;
 
         for (let train of this.trains) {
           for (let i = 0; i < train.cars.length; i++) {
@@ -1674,7 +1659,7 @@
 
       canSpawnOnTrack(track, fromLeft) {
         const centerX = this.width * 0.5;
-        const safeDist = 120;
+        const safeDist = 95;
         for (let t of this.trains) {
           if (t.track !== track) continue;
 
@@ -1703,14 +1688,18 @@
 
         // Active arcade wave pacing:
         // Waves 1-2: 1 train
-        // Waves 3-6: 50% 1 train, 50% 2 trains
-        // Waves 7+: 2 to 3 trains across tracks
+        // Waves 3-5: 50% 1 train, 50% 2 trains
+        // Waves 6-9: 25% 1 train, 45% 2 trains, 30% 3 trains
+        // Waves 10+: 15% 1 train, 45% 2 trains, 40% 3 trains
         let targetTrains = 1;
-        if (this.waveIndex >= 3 && this.waveIndex <= 6) {
+        if (this.waveIndex >= 3 && this.waveIndex <= 5) {
           targetTrains = (this.rng.next() < 0.50) ? 2 : 1;
-        } else if (this.waveIndex >= 7) {
+        } else if (this.waveIndex >= 6 && this.waveIndex <= 9) {
           const roll = this.rng.next();
-          targetTrains = roll < 0.35 ? 1 : (roll < 0.80 ? 2 : 3);
+          targetTrains = roll < 0.25 ? 1 : (roll < 0.70 ? 2 : 3);
+        } else if (this.waveIndex >= 10) {
+          const roll = this.rng.next();
+          targetTrains = roll < 0.15 ? 1 : (roll < 0.60 ? 2 : 3);
         }
 
         let spawnedCount = 0;
@@ -1727,18 +1716,21 @@
           }
 
           // Multi-car train distribution:
-          // Waves 1-3: 1 car
-          // Waves 4-7: 50% 1 car, 50% 2 cars
-          // Waves 8+: 1 car (25%), 2 cars (35%), 3 cars (20%), 4 cars (12%), 5 cars (8%)
+          // Wave 1-2: 1 car
+          // Wave 3+: 2-car trains start appearing
+          // Wave 6+: 3 to 4-car trains become common
+          // Wave 10+: 4 to 5-car trains appear regularly across multiple tracks
           const rollCars = this.rng.next();
           let carCount = 1;
-          if (this.waveIndex >= 4 && this.waveIndex <= 7) {
+          if (this.waveIndex >= 3 && this.waveIndex <= 5) {
             if (rollCars < 0.50) carCount = 2;
-          } else if (this.waveIndex >= 8) {
-            if (rollCars < 0.25) carCount = 1;
-            else if (rollCars < 0.60) carCount = 2;
-            else if (rollCars < 0.80) carCount = 3;
-            else if (rollCars < 0.92) carCount = 4;
+          } else if (this.waveIndex >= 6 && this.waveIndex <= 9) {
+            if (rollCars < 0.20) carCount = 2;
+            else if (rollCars < 0.65) carCount = 3;
+            else carCount = 4;
+          } else if (this.waveIndex >= 10) {
+            if (rollCars < 0.15) carCount = 3;
+            else if (rollCars < 0.60) carCount = 4;
             else carCount = 5;
           }
 
@@ -1766,11 +1758,11 @@
             });
           }
 
-          // Smooth speed scaling: Starts at 52 px/s, ramping gently to cap at 85 px/s
-          let baseSpeed = Math.min(85, 52 + 7.0 * Math.log(this.waveIndex + 1));
-          // Post-100 Score Scaling: +0.14% per score point above 100
-          if (this.score > 100) {
-            baseSpeed *= (1 + (this.score - 100) * 0.0014);
+          // Accelerated speed scaling:
+          let baseSpeed = Math.min(135, 65 + 18.0 * Math.log(this.waveIndex + 1));
+          // Start speed scaling past score 30:
+          if (this.score > 30) {
+            baseSpeed *= (1 + (this.score - 30) * 0.0035);
           }
           const vx = fromLeft ? baseSpeed : -baseSpeed;
           const headX = fromLeft ? (this.trackLeftX - 44) : (this.trackRightX + 44);
@@ -1848,7 +1840,7 @@
 
           if (this.score > this.highScore) {
             this.highScore = this.score;
-            localStorage.setItem('tc2_vegas_v2_high_' + this.currentSeedStr, this.highScore.toString());
+            localStorage.setItem('tc2_vegas_v3_high_' + this.currentSeedStr, this.highScore.toString());
           }
         } else {
           this.strikes++;
@@ -1865,7 +1857,7 @@
         this.gameOver = true;
         if (this.score > this.highScore) {
           this.highScore = this.score;
-          localStorage.setItem('tc2_vegas_v2_high_' + this.currentSeedStr, this.highScore.toString());
+          localStorage.setItem('tc2_vegas_v3_high_' + this.currentSeedStr, this.highScore.toString());
         }
 
         setTimeout(() => {
@@ -1937,12 +1929,11 @@
           }
         }
 
-        // Wave Spawner (Gentle scaling decay: keeps waves manageable at high scores)
+        // Wave Spawner (Accelerated decay: keeps waves aggressive and dynamic)
         this.spawnTimer -= effectiveDt;
         if (this.spawnTimer <= 0) {
           this.spawnWave();
-          const nextInterval = Math.max(2.6, 3.8 - 0.22 * Math.log(this.waveIndex + 1));
-          this.spawnTimer = nextInterval;
+          this.spawnTimer = Math.max(1.4, 3.2 - 0.45 * Math.log(this.waveIndex + 1));
         }
 
         const centerX = this.width * 0.5;
@@ -2545,8 +2536,8 @@
       }
 
       renderTrains(ctx) {
-        const sledW = 74;
-        const sledH = 22;
+        const sledW = 46;
+        const sledH = 20;
         const ghostScale = Math.min(2.1, (this.trackSpacing * 0.58) / 32);
 
         this.trains.forEach(train => {
@@ -2562,16 +2553,16 @@
             // Coupler chain to next car (if alive)
             if (i < train.cars.length - 1 && !train.cars[i + 1].enteredTrap) {
               const nextCarX = this.getCarX(train, i + 1);
-              const couplerY = carY + 8;
+              const couplerY = carY + 7;
               ctx.strokeStyle = '#1e112d';
-              ctx.lineWidth = 4;
+              ctx.lineWidth = 3.5;
               ctx.beginPath();
               ctx.moveTo(carX, couplerY);
               ctx.lineTo(nextCarX, couplerY);
               ctx.stroke();
 
               ctx.strokeStyle = '#c084fc';
-              ctx.lineWidth = 1.8;
+              ctx.lineWidth = 1.6;
               ctx.beginPath();
               ctx.moveTo(carX, couplerY);
               ctx.lineTo(nextCarX, couplerY);
@@ -2581,7 +2572,7 @@
             ctx.save();
             ctx.translate(carX, carY);
 
-            // Olive drab green minecart sled (compact 74x22)
+            // Olive drab green minecart sled (compact 46x20)
             ctx.fillStyle = '#455734';
             ctx.strokeStyle = '#232d1a';
             ctx.lineWidth = 2.5;
@@ -2590,24 +2581,24 @@
 
             // Bevel highlight
             ctx.strokeStyle = '#6f8a54';
-            ctx.lineWidth = 1.8;
+            ctx.lineWidth = 1.6;
             ctx.beginPath();
             ctx.moveTo(-sledW * 0.5 + 2, 2.5);
             ctx.lineTo(sledW * 0.5 - 2, 2.5);
             ctx.stroke();
 
-            // Wheel stud rivets
+            // Wheel stud rivets centered neatly beneath the 46px compact frame
             ctx.fillStyle = '#8ea873';
-            [-26, -9, 9, 26].forEach(rx => {
+            [-15, -5, 5, 15].forEach(rx => {
               ctx.beginPath();
-              ctx.arc(rx, 11, 2.5, 0, Math.PI * 2);
+              ctx.arc(rx, 10, 2.2, 0, Math.PI * 2);
               ctx.fill();
             });
 
             // Wheel brackets
             ctx.fillStyle = '#1e293b';
-            ctx.fillRect(-28, sledH - 1, 8, 4);
-            ctx.fillRect(20, sledH - 1, 8, 4);
+            ctx.fillRect(-17, sledH - 1, 6, 3.5);
+            ctx.fillRect(11, sledH - 1, 6, 3.5);
 
             // Warning aura when nearing the trap
             const distToCenter = Math.abs(carX - this.width * 0.5);
@@ -2615,14 +2606,14 @@
               const pulse = (Math.sin(performance.now() * 0.015) + 1) * 0.5;
               ctx.strokeStyle = `rgba(255, 0, 85, ${0.4 + pulse * 0.5})`;
               ctx.lineWidth = 3.5;
-              ctx.strokeRect(-sledW * 0.5 - 3, -48, sledW + 6, sledH + 51);
+              ctx.strokeRect(-sledW * 0.5 - 3, -46, sledW + 6, sledH + 49);
             }
 
             // Ghost (Turned in direction of motion, snugly seated inside cart)
             if (car.hasGhost) {
               const bobY = Math.sin(train.bobTimer + i * 1.3) * (this.trackSpacing * 0.032);
               ctx.save();
-              ctx.translate(0, -6);
+              ctx.translate(0, -5);
               ctx.scale(ghostScale, ghostScale);
               this.drawGhost(ctx, car.ghostType, bobY, train.facingRight, true);
               ctx.restore();
@@ -2890,66 +2881,6 @@
       }
 
       renderStageProps(ctx) {
-        const cx = this.width * 0.5;
-
-        // DJ Conductor Booth (Top Center) - only render on larger viewports to avoid overlapping hearts and Track 1 on compact screens
-        if (this.height >= 480) {
-          ctx.save();
-          const boothY = this.height * 0.08;
-
-          // DJ Desk with neon edging
-          ctx.fillStyle = '#1e102d';
-          ctx.strokeStyle = '#a855f7';
-          ctx.lineWidth = 2.5;
-          ctx.fillRect(cx - 38, boothY - 14, 76, 28);
-          ctx.strokeRect(cx - 38, boothY - 14, 76, 28);
-
-          // Crossed-out ghost warning sign on DJ desk
-          ctx.strokeStyle = '#ff0055';
-          ctx.lineWidth = 2.5;
-          ctx.beginPath();
-          ctx.arc(cx, boothY, 8.5, 0, Math.PI * 2);
-          ctx.moveTo(cx - 6, boothY - 6);
-          ctx.lineTo(cx + 6, boothY + 6);
-          ctx.stroke();
-
-          // Conductor DJ Character (Vampire in Conductor Hat)
-          // Cape
-          ctx.fillStyle = '#6b21a8';
-          ctx.beginPath();
-          ctx.moveTo(cx - 15, boothY - 14);
-          ctx.lineTo(cx - 18, boothY - 30);
-          ctx.lineTo(cx + 18, boothY - 30);
-          ctx.lineTo(cx + 15, boothY - 14);
-          ctx.closePath();
-          ctx.fill();
-
-          // Head
-          ctx.fillStyle = '#f8fafc';
-          ctx.beginPath();
-          ctx.arc(cx, boothY - 24, 9.5, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Conductor Hat
-          ctx.fillStyle = '#0f051d';
-          ctx.fillRect(cx - 11, boothY - 36, 22, 5.5);
-          ctx.fillRect(cx - 8, boothY - 44, 16, 9);
-          ctx.fillStyle = '#ffd166';
-          ctx.fillRect(cx - 3, boothY - 35, 6, 4); // Gold badge
-
-          // Green & Red track control levers
-          ctx.fillStyle = '#39ff14';
-          ctx.beginPath();
-          ctx.arc(cx - 25, boothY - 18, 4.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#ff0055';
-          ctx.beginPath();
-          ctx.arc(cx + 25, boothY - 18, 4.5, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.restore();
-        }
-
         // "Welcome to Fabulous LAS VEGAS" Neon Diamond Sign (Top Left, nicely clear of top-left controls)
         if (this.width >= 820 && this.height >= 460) {
           ctx.save();
