@@ -1686,20 +1686,20 @@
           [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
         }
 
-        // Active arcade wave pacing:
-        // Waves 1-2: 1 train
-        // Waves 3-5: 50% 1 train, 50% 2 trains
-        // Waves 6-9: 25% 1 train, 45% 2 trains, 30% 3 trains
-        // Waves 10+: 15% 1 train, 45% 2 trains, 40% 3 trains
+        // Balanced arcade wave pacing:
+        // Waves 1-3: 1 train (friendly warm-up)
+        // Waves 4-7: 70% 1 train, 30% 2 trains
+        // Waves 8-13: 40% 1 train, 45% 2 trains, 15% 3 trains
+        // Waves 14+: 25% 1 train, 50% 2 trains, 25% 3 trains
         let targetTrains = 1;
-        if (this.waveIndex >= 3 && this.waveIndex <= 5) {
-          targetTrains = (this.rng.next() < 0.50) ? 2 : 1;
-        } else if (this.waveIndex >= 6 && this.waveIndex <= 9) {
+        if (this.waveIndex >= 4 && this.waveIndex <= 7) {
+          targetTrains = (this.rng.next() < 0.30) ? 2 : 1;
+        } else if (this.waveIndex >= 8 && this.waveIndex <= 13) {
           const roll = this.rng.next();
-          targetTrains = roll < 0.25 ? 1 : (roll < 0.70 ? 2 : 3);
-        } else if (this.waveIndex >= 10) {
+          targetTrains = roll < 0.40 ? 1 : (roll < 0.85 ? 2 : 3);
+        } else if (this.waveIndex >= 14) {
           const roll = this.rng.next();
-          targetTrains = roll < 0.15 ? 1 : (roll < 0.60 ? 2 : 3);
+          targetTrains = roll < 0.25 ? 1 : (roll < 0.75 ? 2 : 3);
         }
 
         let spawnedCount = 0;
@@ -1715,22 +1715,28 @@
             continue; // Track busy, check next track
           }
 
-          // Multi-car train distribution:
-          // Wave 1-2: 1 car
-          // Wave 3+: 2-car trains start appearing
-          // Wave 6+: 3 to 4-car trains become common
-          // Wave 10+: 4 to 5-car trains appear regularly across multiple tracks
+          // Smooth multi-car train distribution:
+          // Waves 1-3: 1 car
+          // Waves 4-7: 65% 1 car, 35% 2 cars
+          // Waves 8-12: 30% 1 car, 50% 2 cars, 20% 3 cars
+          // Waves 13-18: 20% 2 cars, 55% 3 cars, 25% 4 cars
+          // Waves 19+: 15% 2 cars, 40% 3 cars, 30% 4 cars, 15% 5 cars
           const rollCars = this.rng.next();
           let carCount = 1;
-          if (this.waveIndex >= 3 && this.waveIndex <= 5) {
-            if (rollCars < 0.50) carCount = 2;
-          } else if (this.waveIndex >= 6 && this.waveIndex <= 9) {
+          if (this.waveIndex >= 4 && this.waveIndex <= 7) {
+            if (rollCars < 0.35) carCount = 2;
+          } else if (this.waveIndex >= 8 && this.waveIndex <= 12) {
+            if (rollCars < 0.30) carCount = 1;
+            else if (rollCars < 0.80) carCount = 2;
+            else carCount = 3;
+          } else if (this.waveIndex >= 13 && this.waveIndex <= 18) {
             if (rollCars < 0.20) carCount = 2;
-            else if (rollCars < 0.65) carCount = 3;
+            else if (rollCars < 0.75) carCount = 3;
             else carCount = 4;
-          } else if (this.waveIndex >= 10) {
-            if (rollCars < 0.15) carCount = 3;
-            else if (rollCars < 0.60) carCount = 4;
+          } else if (this.waveIndex >= 19) {
+            if (rollCars < 0.15) carCount = 2;
+            else if (rollCars < 0.55) carCount = 3;
+            else if (rollCars < 0.85) carCount = 4;
             else carCount = 5;
           }
 
@@ -1739,15 +1745,15 @@
             let type = (this.rng.next() < 0.5) ? GHOST_TYPES.PINK : GHOST_TYPES.CYAN;
             const bonusRoll = this.rng.next();
 
-            // Freeze Ghost: Ultra-rare (1.2%) with strict 35s cooldown so two NEVER appear simultaneously!
+            // Freeze Ghost: Ultra-rare (1.8%) with strict 35s cooldown so two NEVER appear simultaneously!
             const canSpawnFreeze = (this.gameTime - this.lastFreezeTime > this.freezeCooldown) &&
                                    !this.trains.some(t => t.cars.some(car => car.ghostType === GHOST_TYPES.FREEZE)) &&
                                    !this.flyingGhosts.some(fg => fg.type === GHOST_TYPES.FREEZE);
 
-            if (this.waveIndex > 3 && canSpawnFreeze && bonusRoll < 0.012) {
+            if (this.waveIndex > 3 && canSpawnFreeze && bonusRoll < 0.018) {
               type = GHOST_TYPES.FREEZE;
               this.lastFreezeTime = this.gameTime;
-            } else if (this.waveIndex > 4 && this.strikes > 0 && bonusRoll >= 0.012 && bonusRoll < 0.024) {
+            } else if (this.waveIndex > 3 && this.strikes > 0 && bonusRoll >= 0.018 && bonusRoll < 0.038) {
               type = GHOST_TYPES.HEART;
             }
 
@@ -1758,11 +1764,11 @@
             });
           }
 
-          // Accelerated speed scaling:
-          let baseSpeed = Math.min(135, 65 + 18.0 * Math.log(this.waveIndex + 1));
-          // Start speed scaling past score 30:
-          if (this.score > 30) {
-            baseSpeed *= (1 + (this.score - 30) * 0.0035);
+          // Balanced speed scaling:
+          let baseSpeed = Math.min(105, 54 + 9.5 * Math.log(this.waveIndex + 1));
+          // Start gentle speed scaling past score 50:
+          if (this.score > 50) {
+            baseSpeed *= (1 + (this.score - 50) * 0.0016);
           }
           const vx = fromLeft ? baseSpeed : -baseSpeed;
           const headX = fromLeft ? (this.trackLeftX - 44) : (this.trackRightX + 44);
@@ -1929,11 +1935,11 @@
           }
         }
 
-        // Wave Spawner (Accelerated decay: keeps waves aggressive and dynamic)
+        // Wave Spawner (Balanced decay: progressive challenge with ample reaction time)
         this.spawnTimer -= effectiveDt;
         if (this.spawnTimer <= 0) {
           this.spawnWave();
-          this.spawnTimer = Math.max(1.4, 3.2 - 0.45 * Math.log(this.waveIndex + 1));
+          this.spawnTimer = Math.max(2.1, 3.6 - 0.32 * Math.log(this.waveIndex + 1));
         }
 
         const centerX = this.width * 0.5;
